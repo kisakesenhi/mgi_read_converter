@@ -10,6 +10,7 @@ use std::str;
 use std::path::Path;
 use std::path::PathBuf;
 use clap::{arg, command, value_parser, ArgAction, Command};
+use regex::Regex;
 
 // Capacity 
 // const CAPACITY: usize = 10240; // will be used on flate2::GzDecoder,commented now!
@@ -106,6 +107,36 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     println!("Reads {} parsed in file: {:?}",readcount,inputfilename);
     Ok(())
 }
+
+fn mgi_readheader2_illuminaheader(inputstring: &str) -> Result<String, String> {
+    // this read header does not contain "@" prefix when received with parser.
+
+    let mut fc = String::new();
+    let mut l = String::new();
+    let mut c = String::new();
+    let mut r = String::new();
+    let mut tile = String::new();
+    let mut id = String::new();
+    let mut pair = String::new();
+
+    if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
+    {
+        fc = captures[1].to_string();
+        l = captures[2].to_string();
+        c = captures[3].to_string();
+        r = captures[4].to_string();
+        tile = captures[5].to_string();
+        pair=captures[6].to_string();
+        c = c.trim_start_matches('0').to_string();
+        r = r.trim_start_matches('0').to_string();
+        tile = tile.trim_start_matches('0').to_string();
+        let output=format!("M00001:1:{}:{}:{}:{}:{} 1:N:0:1", fc, l, tile, c, r,pair);    Ok(output)
+    }else{
+        Err(format!("Read name: {}\n\t format does not match to pattern '([A-Z]\\d+)L(\\d)C(\\d\\d\\d)R(\\d\\d\\d)(\\d+)\\/(\\d)$'",inputstring))
+    }
+
+}
+
 fn main() {
     // Parse cli arguments with clap
     let matches= Command::new("mgi_fastq_converter")
