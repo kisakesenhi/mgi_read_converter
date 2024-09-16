@@ -1,5 +1,6 @@
 //use flate2::read::GzDecoder; // flate2 bug on concatated files while decomression, commented!
-use rust_htslib::bgzf::Reader; // omit flate to once success full
+//use rust_htslib::bgzf::Reader; // omit flate to once success full
+use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io;
@@ -41,13 +42,13 @@ fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
 }
 fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),io::Error>{
     // Input values:
-    /*/
+    //
     // While using gzip decoder from flate2 
-    let in_filename = "input.fastq.gz";
     let in_fh = std::fs::File::open(in_filename).unwrap();
-    let in_gz = GzDecoder::new(in_fh);
+    let in_gz = MultiGzDecoder::new(in_fh);
     let in_buf = io::BufReader::with_capacity(CAPACITY, in_gz);
-    */
+    /*
+    // Here using the Reader from Hslib
     let in_buf:Reader ;
     match Reader::from_path(inputfilename){
         Ok(buf) => in_buf = buf,
@@ -56,6 +57,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
             return Err(std::io::Error::new(io::ErrorKind::InvalidInput,format!("{:?}",e)))
         },
     }
+    */
     //Output values
     //let out_filename = "output.fastq.gz";
     let out_fh = std::fs::File::create(outputfilename)?;
@@ -70,29 +72,40 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         let mut c_record = record.to_owned_record();
         // Update to the header
         let header:&str = str::from_utf8(&c_record.head).unwrap();
-        //check if heder contains "/"
-        let headerpresplit:Vec<&str>= header.split(" ").collect();
-        if ! headerpresplit[0].contains("/"){
-            //Return error
-            eprint!("Read header does not contain `/`");
-            readcount=0; // nullify the reads
-            return false
-             //return(Err(std::io::Error::new(io::ErrorKind::InvalidInput,"Read Header does not contain `/` in readname"))) 
+        match mgi_readheader2_illuminaheader(header){
+            Ok(new_header) =>{
+                            c_record.head=newheader.as_bytes().to_vec();
+                            match c_record.write(&mut out_buf){
+                                    Ok(_) => true,// if writes success fully continue parsing
+                                    _ => false // if write not successfull  stop parsing 
+            }
+            
+            }
+            _ => false
         }
-        let headersplit:Vec<&str> = header.split("/").collect();
-        //let headersplit:Vec<&str> = str::from_utf8(&c_record.head).unwrap().split("/").collect();
-        // if / is not in h
-        let mut newheader=String::new();
-        newheader.push_str(headersplit[0]);
-        newheader.push_str(":0:0:0:0:0:0 ");
-        newheader.push_str(headersplit[1]);
-        newheader.push_str(":N:0:1");
-        c_record.head=newheader.as_bytes().to_vec();
+
+
+        // Remove from here
+//        //check if heder contains "/"
+//        let headerpresplit:Vec<&str>= header.split(" ").collect();
+//        if ! headerpresplit[0].contains("/"){
+//            //Return error
+//            eprint!("Read header does not contain `/`");
+//            readcount=0; // nullify the reads
+//            return false
+//             //return(Err(std::io::Error::new(io::ErrorKind::InvalidInput,"Read Header does not contain `/` in readname"))) 
+//        }
+//        let headersplit:Vec<&str> = header.split("/").collect();
+//        //let headersplit:Vec<&str> = str::from_utf8(&c_record.head).unwrap().split("/").collect();
+//        // if / is not in h
+//        let mut newheader=String::new();
+//        newheader.push_str(headersplit[0]);
+//        newheader.push_str(":0:0:0:0:0:0 ");
+//        newheader.push_str(headersplit[1]);
+//        newheader.push_str(":N:0:1");
+//        c_record.head=newheader.as_bytes().to_vec(); // update the header !!!
+//        // Remove to here
         // write to the output buffer
-        match c_record.write(&mut out_buf){
-            Ok(_) => true,// if writes success fully continue parsing
-            _ => false // if write not successfull  stop parsing 
-        }
     }
         ).expect("Invalid FASTQ file");
     if readcount==0 {
