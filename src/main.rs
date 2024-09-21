@@ -55,6 +55,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     let out_fh = std::fs::File::create(outputfilename)?;
     let out_gz = GzEncoder::new(out_fh, Compression::default());
     let mut out_buf = io::BufWriter::new(out_gz);
+    let mut header_buffer_string=String::with_capacity(200);
     
     // Read using the fastq::Parser
     let parser = fastq::Parser::new(in_buf);
@@ -63,8 +64,10 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         readcount+=1;
         let mut c_record = record.to_owned_record();
         // Update to the header
-        let header:&str = str::from_utf8(&c_record.head).unwrap();
-        match mgi_readheader2_illuminaheader(header,&regexbuilder){
+        //let header:&str = str::from_utf8(&c_record.head).unwrap();
+        header_buffer_string.clear();
+        header_buffer_string.push_str(str::from_utf8(&c_record.head).unwrap());
+        match mgi_readheader2_illuminaheader(&header_buffer_string,&regexbuilder){
             Ok(new_header) =>{
                             //println!("{}",&new_header.capacity());
                             c_record.head=new_header.as_bytes().to_vec();
