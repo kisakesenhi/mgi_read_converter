@@ -5,20 +5,20 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io;
 use std::io::prelude::*;
-use fastq::Parser; // not used directly but keep here for future reference
+//use fastq::Parser; // not used directly but keep here for future reference
 use fastq::Record;
 use std::str;
-use std::path::Path;
+//use std::path::Path;
 use std::path::PathBuf;
-use clap::{arg, command, value_parser, ArgAction, Command};
+use clap::{arg, Command, value_parser }; // ArgAction, Command};
 use regex::Regex;
-use regex::RegexBuilder;
+//use regex::RegexBuilder;
 
 // Capacity 
 const CAPACITY: usize = 10240; // will be used on flate2::GzDecoder,commented now!
 fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
     //check if path exists
-    if ! inputfilename.exists() { return(Err(std::io::Error::new(io::ErrorKind::NotFound,"File not found")))  }
+    if ! inputfilename.exists() { return Err(std::io::Error::new(io::ErrorKind::NotFound,"File not found"))  }
     // check if parent directory writable !!!
     let inputdirectory=inputfilename.parent().unwrap();
     // give this error while creating output file
@@ -34,7 +34,7 @@ fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
     //check if filename contains "gz"
     match infilename.to_str() {
         Some(s) => {
-                        if ! s.ends_with("gz"){ return(Err(std::io::Error::new(io::ErrorKind::InvalidInput,"Not Gzip file"))) }
+                        if ! s.ends_with("gz"){ return Err(std::io::Error::new(io::ErrorKind::InvalidInput,"Not Gzip file")) }
                 },
         _=>{},
     }
@@ -48,17 +48,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     let in_fh = std::fs::File::open(inputfilename).unwrap();
     let in_gz = MultiGzDecoder::new(in_fh);
     let in_buf = io::BufReader::with_capacity(CAPACITY, in_gz);
-    /*
-    // Here using the Reader from Hslib
-    let in_buf:Reader ;
-    match Reader::from_path(inputfilename){
-        Ok(buf) => in_buf = buf,
-        Err(e) => {
-            // will be usign flate2 in the future, so don't try to convert error types
-            return Err(std::io::Error::new(io::ErrorKind::InvalidInput,format!("{:?}",e)))
-        },
-    }
-    */
+
     let regexbuilder=Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap();
     //Output values
     //let out_filename = "output.fastq.gz";
@@ -88,33 +78,13 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         }
 
 
-        // Remove from here
-//        //check if heder contains "/"
-//        let headerpresplit:Vec<&str>= header.split(" ").collect();
-//        if ! headerpresplit[0].contains("/"){
-//            //Return error
-//            eprint!("Read header does not contain `/`");
-//            readcount=0; // nullify the reads
-//            return false
-//             //return(Err(std::io::Error::new(io::ErrorKind::InvalidInput,"Read Header does not contain `/` in readname"))) 
-//        }
-//        let headersplit:Vec<&str> = header.split("/").collect();
-//        //let headersplit:Vec<&str> = str::from_utf8(&c_record.head).unwrap().split("/").collect();
-//        // if / is not in h
-//        let mut newheader=String::new();
-//        newheader.push_str(headersplit[0]);
-//        newheader.push_str(":0:0:0:0:0:0 ");
-//        newheader.push_str(headersplit[1]);
-//        newheader.push_str(":N:0:1");
-//        c_record.head=newheader.as_bytes().to_vec(); // update the header !!!
-//        // Remove to here
         // write to the output buffer
     }
         ).expect("Invalid FASTQ file");
     if readcount==0 {
         // remove the output file
-        std::fs::remove_file(outputfilename);
-        return(Err(std::io::Error::new(io::ErrorKind::InvalidInput,"0 records parsed in fast file"))) 
+        std::fs::remove_file(outputfilename)?;
+        return Err(std::io::Error::new(io::ErrorKind::InvalidInput,"0 records parsed in fast file"))
     }
 
     // Flush the remaing of the buffer to the file before exit.
@@ -124,24 +94,15 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     Ok(())
 }
 
-fn mgi_readheader2_illuminaheader(inputstring: &str,Regexbuilder: &regex::Regex) -> Result<String, String> {
+fn mgi_readheader2_illuminaheader(inputstring: &str,regex_builder: &regex::Regex) -> Result<String, String> {
     // this read header does not contain "@" prefix when received with parser.
-    /*
-    let mut fc = String::new();
-    let mut l = String::new();
-    let mut c = String::new();
-    let mut r = String::new();
-    let mut tile = String::new();
-    let mut id = String::new();
-    let mut pair = String::new();
-    */
     // Lets try sring with capacity
     //let mut output=String::new();
     let mut output=String::with_capacity(100);
     output.push_str("M00001:1:");
 
     //if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
-    if let Some(captures) = Regexbuilder.captures(inputstring)
+    if let Some(captures) = regex_builder.captures(inputstring)
     {
         //fc = captures[1].to_string();
         output.push_str(&captures[1]);
@@ -183,9 +144,9 @@ fn mgi_readheader2_illuminaheader(inputstring: &str,Regexbuilder: &regex::Regex)
 fn main() {
     // Parse cli arguments with clap
     let matches= Command::new("mgi_fastq_converter")
-        .version("1.0")
+        .version("1.1")
         .author("Ibrahim K. <kisakesenhi@gmail.com>")
-        .about("Converts the readname format to illumina readname formatting")
+        .about("Converts the readname format to illumina readname format")
         .arg_required_else_help(true)
         .arg(
             arg!( -f --fastq <FILE> "Fastq files fastq.gz"
@@ -199,7 +160,7 @@ fn main() {
     // use with getraw and convert into iter
     if matches.contains_id("fastq"){ // another if
     if matches.value_source("fastq").expect("checked contains_id") == clap::ValueSource::CommandLine {
-        let mut fastqfiles_itr = matches.get_raw("fastq")
+        let fastqfiles_itr = matches.get_raw("fastq")
             .expect("`fastq` is required")
             .into_iter();
         for fq in fastqfiles_itr{
