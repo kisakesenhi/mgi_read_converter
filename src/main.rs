@@ -76,6 +76,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         let header:&str = str::from_utf8(&c_record.head).unwrap();
         match mgi_readheader2_illuminaheader(header,&regexbuilder){
             Ok(new_header) =>{
+                            //println!("{}",&new_header.capacity());
                             c_record.head=new_header.as_bytes().to_vec();
                             match c_record.write(&mut out_buf){
                                     Ok(_) => true,// if writes success fully continue parsing
@@ -136,7 +137,7 @@ fn mgi_readheader2_illuminaheader(inputstring: &str,Regexbuilder: &regex::Regex)
     */
     // Lets try sring with capacity
     //let mut output=String::new();
-    let mut output=String::with_capacity(200);
+    let mut output=String::with_capacity(100);
     output.push_str("M00001:1:");
 
     //if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
