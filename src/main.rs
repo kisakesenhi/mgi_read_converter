@@ -12,6 +12,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use clap::{arg, command, value_parser, ArgAction, Command};
 use regex::Regex;
+use regex::RegexBuilder;
 
 // Capacity 
 const CAPACITY: usize = 10240; // will be used on flate2::GzDecoder,commented now!
@@ -58,6 +59,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         },
     }
     */
+    let regexbuilder=Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap();
     //Output values
     //let out_filename = "output.fastq.gz";
     let out_fh = std::fs::File::create(outputfilename)?;
@@ -72,7 +74,7 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         let mut c_record = record.to_owned_record();
         // Update to the header
         let header:&str = str::from_utf8(&c_record.head).unwrap();
-        match mgi_readheader2_illuminaheader(header){
+        match mgi_readheader2_illuminaheader(header,&regexbuilder){
             Ok(new_header) =>{
                             c_record.head=new_header.as_bytes().to_vec();
                             match c_record.write(&mut out_buf){
@@ -121,9 +123,9 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     Ok(())
 }
 
-fn mgi_readheader2_illuminaheader(inputstring: &str) -> Result<String, String> {
+fn mgi_readheader2_illuminaheader(inputstring: &str,Regexbuilder: &regex::Regex) -> Result<String, String> {
     // this read header does not contain "@" prefix when received with parser.
-
+    /*
     let mut fc = String::new();
     let mut l = String::new();
     let mut c = String::new();
@@ -131,19 +133,46 @@ fn mgi_readheader2_illuminaheader(inputstring: &str) -> Result<String, String> {
     let mut tile = String::new();
     let mut id = String::new();
     let mut pair = String::new();
+    */
+    // Lets try sring with capacity
+    //let mut output=String::new();
+    let mut output=String::with_capacity(200);
+    output.push_str("M00001:1:");
 
-    if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
+    //if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
+    if let Some(captures) = Regexbuilder.captures(inputstring)
     {
-        fc = captures[1].to_string();
-        l = captures[2].to_string();
-        c = captures[3].to_string();
-        r = captures[4].to_string();
-        tile = captures[5].to_string();
-        pair=captures[6].to_string();
-        c = c.trim_start_matches('0').to_string();
-        r = r.trim_start_matches('0').to_string();
-        tile = tile.trim_start_matches('0').to_string();
-        let output=format!("M00001:1:{}:{}:{}:{}:{} {}:N:0:1", fc, l, tile, c, r,pair);    Ok(output)
+        //fc = captures[1].to_string();
+        output.push_str(&captures[1]);
+        output.push(':');
+
+
+        //l = captures[2].to_string();
+        output.push_str(&captures[2]);
+        output.push(':');
+
+        //tile = captures[5].to_string();
+        //tile = tile.trim_start_matches('0').to_string();
+        output.push_str(&captures[5].trim_start_matches('0'));
+        output.push(':');
+
+        //c = captures[3].to_string();
+        //c = c.trim_start_matches('0').to_string();
+        output.push_str(&captures[3].trim_start_matches('0'));
+        output.push(':');
+
+
+        //r = captures[4].to_string();
+        //r = r.trim_start_matches('0').to_string();
+        output.push_str(&captures[4].trim_start_matches('0'));
+
+        output.push(' ');
+
+        //pair=captures[6].to_string();
+        output.push_str(&captures[6]);
+        output.push_str(":N:0:1");
+        //let output=format!("M00001:1:{}:{}:{}:{}:{} {}:N:0:1", fc, l, tile, c, r,pair);    Ok(output)
+        Ok(output)
     }else{
         Err(format!("Read name: {}\n\t format does not match to pattern '([A-Z]\\d+)L(\\d)C(\\d\\d\\d)R(\\d\\d\\d)(\\d+)\\/(\\d)$'",inputstring))
     }
