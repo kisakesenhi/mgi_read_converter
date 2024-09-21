@@ -67,7 +67,9 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
         //let header:&str = str::from_utf8(&c_record.head).unwrap();
         header_buffer_string.clear();
         header_buffer_string.push_str(str::from_utf8(&c_record.head).unwrap());
-        match mgi_readheader2_illuminaheader(&header_buffer_string,&regexbuilder){
+        //match mgi_readheader2_illuminaheader(&header_buffer_string,&regexbuilder){
+        match mgi_readhedaer2_illuminahederNoRegex(&header_buffer_string){
+        //match mgi_readhedaer2_illuminahederNoRegex(&header_buffer_string,&lindex,cindex,rindex,pairindex ){
             Ok(new_header) =>{
                             //println!("{}",&new_header.capacity());
                             c_record.head=new_header.as_bytes().to_vec();
@@ -98,11 +100,15 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
 }
 
 fn mgi_readheader2_illuminaheader(inputstring: &str,regex_builder: &regex::Regex) -> Result<String, String> {
-    // this read header does not contain "@" prefix when received with parser.
     // Lets try sring with capacity
     //let mut output=String::new();
     let mut output=String::with_capacity(100);
     output.push_str("M00001:1:");
+    // delete from here
+    let rindex=inputstring.rfind("R").unwrap();
+    println!("{}",&inputstring[rindex..rindex+2]);
+    println!("{:?}",rindex);
+    // delete to here
 
     //if let Some(captures) = Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap().captures(inputstring)
     if let Some(captures) = regex_builder.captures(inputstring)
@@ -142,6 +148,45 @@ fn mgi_readheader2_illuminaheader(inputstring: &str,regex_builder: &regex::Regex
         Err(format!("Read name: {}\n\t format does not match to pattern '([A-Z]\\d+)L(\\d)C(\\d\\d\\d)R(\\d\\d\\d)(\\d+)\\/(\\d)$'",inputstring))
     }
 
+}
+fn mgi_readhedaer2_illuminahederNoRegex( inputstring: &str )->Result<String,String>{
+    let mut output=String::with_capacity(100);
+    let lindex=inputstring.rfind("L").unwrap();
+    let cindex=inputstring.rfind("C").unwrap();
+    let rindex=inputstring.rfind("R").unwrap();
+    let pairindex=inputstring.rfind("/").unwrap();
+    /*
+    println!("read ilm: {}", &inputstring);
+    //println!("Capture1: {}",&inputstring[0..lindex]);
+    println!("Capture2: {}", &inputstring[lindex+1..cindex]);
+    println!("Capture5: {}",&inputstring[rindex+4..pairindex].trim_start_matches('0'));
+    println!("Capture3: {}",&inputstring[cindex+1..rindex].trim_start_matches('0'));
+    println!("Capture4: {}",&inputstring[rindex+1..rindex+4].trim_start_matches('0'));
+    println!("Captures6: {}", &inputstring[pairindex+1..] );
+    */
+    output.push_str("M00001:1:");
+    // push flowcell
+    output.push_str(&inputstring[0..lindex]);
+    //push lane
+    output.push(':');
+    output.push_str(&inputstring[lindex+1..cindex]);
+    output.push(':');
+    // push read number
+    output.push_str(&inputstring[rindex+4..pairindex].trim_start_matches('0'));
+    output.push(':');
+    // push the c
+    output.push_str(&inputstring[cindex+1..rindex].trim_start_matches('0'));
+    output.push(':');
+    // push the r
+    output.push_str(&inputstring[rindex+1..rindex+4].trim_start_matches('0'));
+    output.push(' ');
+
+    // push  the pair
+    output.push_str(&inputstring[pairindex+1..]);
+    output.push_str(":N:0:1");
+
+    //println!("Current ouput: {}",&output);
+    Ok(output)
 }
 
 fn main() {
