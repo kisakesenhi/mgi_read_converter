@@ -6,16 +6,19 @@ use flate2::Compression;
 use std::io;
 use std::io::prelude::*;
 //use fastq::Parser; // not used directly but keep here for future reference
-use fastq::Record;
+use fastq::{Record,OwnedRecord};
 use std::str;
 //use std::path::Path;
 use std::path::PathBuf;
 use clap::{arg, Command, value_parser }; // ArgAction, Command};
 use regex::Regex;
+use rayon::prelude::*;
 //use regex::RegexBuilder;
 
 // Capacity 
 const CAPACITY: usize = 10240; // will be used on flate2::GzDecoder,commented now!
+// Chunk size 
+const chunk_size:usize=1000;
 fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
     //check if path exists
     if ! inputfilename.exists() { return Err(std::io::Error::new(io::ErrorKind::NotFound,"File not found"))  }
@@ -41,6 +44,41 @@ fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
     Ok(outputbuffer)
     
 }
+
+fn convert_chunks<T: std::io::Write>(chunks:& mut Vec<OwnedRecord>, out_buf:& mut io::BufWriter<T>){
+    //let mut out_buf = io::BufWriter::new(out_gz);
+    //let mut header_buffer_string=String::with_capacity(200);
+    chunks
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(i,record)| {
+            match str::from_utf8(&record.head){
+                Ok(header)=>{
+                    match mgi_readhedaer2_illuminahederNoRegex(header) {
+                        Ok(new_header)=> {
+                            record.head = new_header.as_bytes().to_vec();
+                        },
+                        Err(e)=> {
+                            eprintln!("Record #{} header could not be converted: {}", i, header);
+                            //eprintln!("Record has an invalid UTF-8 header. Skipping. Error: {}", e);
+                        }
+                    }
+                },
+                Err(e)=> {
+                    //eprintln!("Record #{} header could not be converted: {}", i, header);
+                    eprintln!("Record has an invalid UTF-8 header. Skipping. Error: {}", e);
+                }
+            }
+
+    });
+    //write chunks to output!
+    for record in chunks {
+        record.write(out_buf).unwrap();
+    }
+
+
+    
+}
 fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),io::Error>{
     // Input values:
     //
@@ -55,7 +93,9 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     let out_fh = std::fs::File::create(outputfilename)?;
     let out_gz = GzEncoder::new(out_fh, Compression::default());
     let mut out_buf = io::BufWriter::new(out_gz);
-    let mut header_buffer_string=String::with_capacity(200);
+    //let mut header_buffer_string=String::with_capacity(200);
+
+    let mut chunks: Vec<OwnedRecord>=Vec::with_capacity(chunk_size);
     
     // Read using the fastq::Parser
     let parser = fastq::Parser::new(in_buf);
@@ -63,29 +103,22 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     parser.each( |record| {
         readcount+=1;
         let mut c_record = record.to_owned_record();
-        // Update to the header
-        //let header:&str = str::from_utf8(&c_record.head).unwrap();
-        header_buffer_string.clear();
-        header_buffer_string.push_str(str::from_utf8(&c_record.head).unwrap());
-        //match mgi_readheader2_illuminaheader(&header_buffer_string,&regexbuilder){
-        match mgi_readhedaer2_illuminahederNoRegex(&header_buffer_string){
-        //match mgi_readhedaer2_illuminahederNoRegex(&header_buffer_string,&lindex,cindex,rindex,pairindex ){
-            Ok(new_header) =>{
-                            //println!("{}",&new_header.capacity());
-                            c_record.head=new_header.as_bytes().to_vec();
-                            match c_record.write(&mut out_buf){
-                                    Ok(_) => true,// if writes success fully continue parsing
-                                    _ => false // if write not successfull  stop parsing 
-            }
-            
-            }
-            _ => false
+        chunks.push(c_record);//temporary
+        // TODO LEFT HERE
+        //println!("{:?},{},{}",chunks.len()==chunk_size,chunks.len(),chunk_size);
+        if (chunks.len() == chunk_size ){
+            convert_chunks(& mut chunks,& mut out_buf);
+            chunks.clear();
         }
 
 
-        // write to the output buffer
+        true
     }
-        ).expect("Invalid FASTQ file");
+        ).expect("Invalid FASTQ file"); // parser each ends here
+    if !chunks.is_empty(){ 
+
+            convert_chunks(& mut chunks,& mut out_buf);
+    }
     if readcount==0 {
         // remove the output file
         std::fs::remove_file(outputfilename)?;
@@ -151,7 +184,8 @@ fn mgi_readheader2_illuminaheader(inputstring: &str,regex_builder: &regex::Regex
 }
 fn mgi_readhedaer2_illuminahederNoRegex( inputstring: &str )->Result<String,String>{
     let mut output=String::with_capacity(100);
-    let lindex=inputstring.rfind("L").unwrap();
+    //let lindex=inputstring.rfind("L").unwrap();
+    let lindex=inputstring.rfind("L").expect("L not found!");
     let cindex=inputstring.rfind("C").unwrap();
     let rindex=inputstring.rfind("R").unwrap();
     let pairindex=inputstring.rfind("/").unwrap();
