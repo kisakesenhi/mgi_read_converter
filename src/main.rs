@@ -5,8 +5,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io;
 use std::io::prelude::*;
-//use fastq::Parser; // not used directly but keep here for future reference
-use fastq::{Record,OwnedRecord};
+use fastq::{Record,OwnedRecord,parse_path};
 use std::str;
 //use std::path::Path;
 use std::path::PathBuf;
@@ -14,11 +13,18 @@ use clap::{arg, Command, value_parser }; // ArgAction, Command};
 use regex::Regex;
 use rayon::prelude::*;
 //use regex::RegexBuilder;
+use fastq::thread_reader;
 
 // Capacity 
-const CAPACITY: usize = 10240; // will be used on flate2::GzDecoder,commented now!
+const CAPACITY: usize = 131072;//10240; // will be used on flate2::GzDecoder,commented now!
+// Thread reader
+const BUFSIZE: usize = 131072;
+//131072
+const QUEULEN: usize =1500;
+
 // Chunk size 
-const chunk_size:usize=1000;
+const chunk_size:usize=1500;
+
 fn check_inputfiles(inputfilename:&PathBuf)->Result<PathBuf,io::Error>{
     //check if path exists
     if ! inputfilename.exists() { return Err(std::io::Error::new(io::ErrorKind::NotFound,"File not found"))  }
@@ -50,8 +56,7 @@ fn convert_chunks<T: std::io::Write>(chunks:& mut Vec<OwnedRecord>, out_buf:& mu
     //let mut header_buffer_string=String::with_capacity(200);
     chunks
         .par_iter_mut()
-        .enumerate()
-        .for_each(|(i,record)| {
+        .for_each(|record| {
             match str::from_utf8(&record.head){
                 Ok(header)=>{
                     match mgi_readhedaer2_illuminahederNoRegex(header) {
@@ -59,7 +64,7 @@ fn convert_chunks<T: std::io::Write>(chunks:& mut Vec<OwnedRecord>, out_buf:& mu
                             record.head = new_header.as_bytes().to_vec();
                         },
                         Err(e)=> {
-                            eprintln!("Record #{} header could not be converted: {}", i, header);
+                            eprintln!("Record header could not be converted: {}", header);
                             //eprintln!("Record has an invalid UTF-8 header. Skipping. Error: {}", e);
                         }
                     }
@@ -85,7 +90,9 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     // While using gzip decoder from flate2 
     let in_fh = std::fs::File::open(inputfilename).unwrap();
     let in_gz = MultiGzDecoder::new(in_fh);
-    let in_buf = io::BufReader::with_capacity(CAPACITY, in_gz);
+    // Remove here to switch to thread reader!
+    //let in_buf = io::BufReader::with_capacity(CAPACITY, in_gz);
+    //until here remove for thread reader!
 
     let regexbuilder=Regex::new(r"([A-Z]\d+)L(\d)C(\d\d\d)R(\d\d\d)(\d+)\/(\d)$").unwrap();
     //Output values
@@ -95,10 +102,13 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     let mut out_buf = io::BufWriter::new(out_gz);
     //let mut header_buffer_string=String::with_capacity(200);
 
-    let mut chunks: Vec<OwnedRecord>=Vec::with_capacity(chunk_size);
     
+    let input_reader_thred= thread_reader(BUFSIZE,QUEULEN,in_gz,|reader| {
     // Read using the fastq::Parser
-    let parser = fastq::Parser::new(in_buf);
+    //let parser = fastq::Parser::new(in_buf);
+    let mut parser =fastq::Parser::new(reader);
+    // chunks
+    let mut chunks: Vec<OwnedRecord>=Vec::with_capacity(chunk_size);
     let mut readcount=0;
     parser.each( |record| {
         readcount+=1;
@@ -129,6 +139,8 @@ fn convert_fastq(inputfilename:&PathBuf , outputfilename:&PathBuf ) ->Result<(),
     out_buf.flush().expect("Can't buffer flush to the file");
 
     println!("Reads {} parsed in file: {:?}",readcount,inputfilename);
+    Ok(())
+    });
     Ok(())
 }
 
